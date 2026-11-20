@@ -24,7 +24,14 @@ export default async function handler(req,res){
   if(!env.SUPABASE_URL||!env.SUPABASE_SECRET_KEY||!env.DEMO_CODE||!env.HOST_TOKEN||env.DEMO_CODE.length<8||env.HOST_TOKEN.length<16||!Number.isFinite(Date.parse(env.DEMO_EXPIRES_AT)))throw fail(503,'Live classroom setup is not complete. Concept preview is still available.');
   const action=new URL(req.url,'http://localhost').searchParams.get('action')||'list';
   if(req.method==='GET'&&action==='status')return send(200,{open:Date.now()<Date.parse(env.DEMO_EXPIRES_AT)});
-  if(!eq(req.headers['x-demo-code'],env.DEMO_CODE))throw fail(401,'Enter the classroom access code.');
+  if (!eq(req.headers['x-demo-code'], env.DEMO_CODE)) {
+  console.warn('BYC DEBUG', {
+    configuredLength: env.DEMO_CODE?.length,
+    receivedLength: req.headers['x-demo-code']?.length,
+    deployment: process.env.VERCEL_GIT_COMMIT_SHA
+  });
+  throw fail(401, 'Enter the classroom access code.');
+}
   const host=eq(req.headers['x-host-token'],env.HOST_TOKEN);
   if(Date.now()>=Date.parse(env.DEMO_EXPIRES_AT)&&!(host&&action==='reset')&&action!=='delete')throw fail(410,'The classroom session has ended.');
   const session=hash(env.DEMO_CODE).slice(0,32);
