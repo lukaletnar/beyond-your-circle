@@ -1,5 +1,9 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-const env=process.env;
+const env = Object.fromEntries(
+  Object.entries(process.env).map(
+    ([key, value]) => [key, value.trim()]
+  )
+);
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const eq=(a,b)=>{if(typeof a!=='string'||typeof b!=='string')return false;return timingSafeEqual(Buffer.from(hash(a)),Buffer.from(hash(b)))};
 const ids=['magazine','exhibition','platform'];
