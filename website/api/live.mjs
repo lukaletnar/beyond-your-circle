@@ -14,8 +14,24 @@ async function db(path,options={}){
  const key=env.SUPABASE_SECRET_KEY;
  const headers={apikey:key,'Content-Type':'application/json',...(key.startsWith('eyJ')?{Authorization:`Bearer ${key}`}:{}) ,...options.headers};
  const r=await fetch(`${env.SUPABASE_URL.replace(/\/$/,'')}/rest/v1/${path}`,{...options,headers,signal:AbortSignal.timeout(10000)});
- if(!r.ok){const body=await r.text();if(body.includes('DEMO_CAPACITY'))throw fail(409,'Classroom is full. Ask the presenter.');throw fail(503,'Database unavailable. Please retry or tell the presenter.');}
- return r.status===204?null:await r.json();
+if (!r.ok) {
+  const body = await r.text();
+  let code = "unknown";
+
+  try {
+    code = JSON.parse(body).code || "unknown";
+  } catch {}
+
+  console.error("SUPABASE ERROR", {
+    status: r.status,
+    code: code
+  });
+
+  if (body.includes("DEMO_CAPACITY"))
+    throw fail(409, "Classroom is full. Ask the presenter.");
+
+  throw fail(503, "Database unavailable. Please retry or tell the presenter.");
+} return r.status===204?null:await r.json();
 }
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
