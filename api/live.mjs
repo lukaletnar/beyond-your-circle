@@ -1,5 +1,5 @@
 import { recommend } from '../assets/teams.mjs';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { programmes, skillGroups, interestGroups, habits } from '../assets/catalog.mjs';
 const env=Object.fromEntries(Object.entries(process.env).map(([k,v])=>[k,v.trim()]));
 const hash=s=>createHash('sha256').update(s).digest('hex');
@@ -11,7 +11,7 @@ const uuid=v=>{if(typeof v!=='string'||!(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[
 const validToken=t=>typeof t==='string'&&/^[a-f0-9]{64}$/.test(t);
 const tags=(v,allowed,max)=>{const a=Array.isArray(v)?[...new Set(v.filter(x=>allowed.includes(x)))]:[];if(!a.length||a.length>max)throw fail(400,`Choose 1 to ${max} items.`);return a};
 const date=v=>{if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v)||!Number.isFinite(Date.parse(v)))throw fail(400,'Choose valid dates.');return v};
-const publicPeople='id,name,first_name,last_name,programme,skills,interests,bio,habits,portfolio,created_at';
+const publicPeople='id,name,first_name,last_name,programme,skills,interests,bio,habits,portfolio,photo_version,created_at';
 const publicCalls='id,owner_id,title,summary,detail,kind,roles,deadline,delivery,deliverables,created_at';
 async function db(path,opts={}){const key=env.SUPABASE_SECRET_KEY;const headers={apikey:key,'Content-Type':'application/json',...(key.startsWith('eyJ')?{Authorization:`Bearer ${key}`}:{}) ,...opts.headers};const base=env.SUPABASE_URL.replace(/\/rest\/v1\/?$/,'').replace(/\/$/,'');let r;try{r=await fetch(`${base}/rest/v1/${path}`,{...opts,headers,signal:AbortSignal.timeout(10000)})}catch{throw fail(503,'Database connection unavailable.');}if(!r.ok){const body=await r.text();let errorCode='unknown';try{errorCode=JSON.parse(body).code||'unknown'}catch{}console.error('BYC database failure',{status:r.status,code:errorCode});if(body.includes('BYC_DM_RATE'))throw fail(429,'Message limit reached. Try again later.');if(body.includes('BYC_INVALID_RECIPIENT'))throw fail(404,'Recipient unavailable.');if(body.includes('DEMO_CAPACITY'))throw fail(409,'Classroom is full.');if(r.status===409)throw fail(409,'This record already exists. Refresh and try again.');throw fail(503,'Database unavailable. Please tell the presenter.');}if(r.status===204||r.status===205)return null;const text=await r.text();return text.trim()?JSON.parse(text):null}
 const write=(path,method,value,representation=false)=>db(path,{method,...(value===undefined?{}:{body:JSON.stringify(value)}),headers:{Prefer:representation?'return=representation':'return=minimal'}});
@@ -36,6 +36,10 @@ export default async function handler(req,res){res.setHeader('Cache-Control','no
   const threads=[];const seen=new Set();for(const m of messages){const other=m.sender_id===id?m.recipient_id:m.sender_id;if(seen.has(other))continue;seen.add(other);threads.push({person_id:other,last:m.message,created_at:m.created_at,unread:counts[other]||0})}
   return send(200,{threads,unread:unread.length,saved:saved.map(x=>x.person_id)});
  }
+ if(req.method==='GET'&&action==='photos'){
+  const ids=[...new Set((url.searchParams.get('id')||'').split(',').filter(Boolean).map(uuid))];if(!ids.length||ids.length>60)throw fail(400,'Invalid photo request.');
+  const rows=await db(`byc_profiles?${scope}&id=in.(${ids.join(',')})&select=id,photo_version,photo_data&limit=60`);return send(200,{photos:rows});
+ }
  if(req.method==='GET'&&action==='list'){
   const [people,calls]=await Promise.all([db(`byc_profiles?${scope}&select=${publicPeople}&order=created_at.desc&limit=60`),db(`byc_calls?${scope}&select=${publicCalls}&order=created_at.desc&limit=60`)]);
   const links=calls.length?await db(`byc_applications?call_id=in.(${calls.map(c=>c.id).join(',')})&select=call_id,person_id,status,role&limit=3600`):[];
@@ -53,6 +57,11 @@ export default async function handler(req,res){res.setHeader('Cache-Control','no
   if(b.consent!==true)throw fail(400,'Confirm voluntary classroom sharing.');const first=required(b.first,24,'your first name'),last=required(b.last,24,'your last name');if((first+' '+last).length>48)throw fail(400,'Use a combined name of up to 48 characters.');if(!Object.values(programmes).flat().includes(b.programme))throw fail(400,'Choose your programme.');const h={};for(const [k,options] of Object.entries(habits)){if(!options.includes(b.habits?.[k]))throw fail(400,'Complete your working preferences.');h[k]=b.habits[k]};const portfolio=clean(b.portfolio,250);if(portfolio&&!/^https:\/\/[^\s]+$/i.test(portfolio))throw fail(400,'Use an HTTPS portfolio link.');const t=validToken(b.token)?b.token:randomBytes(32).toString('hex');const result=await db('rpc/byc_join_v2',{method:'POST',body:JSON.stringify({p_session:session,p_token_hash:hash(t),p_first:first,p_last:last,p_programme:b.programme,p_skills:tags(b.skills,Object.values(skillGroups).flat(),12),p_interests:tags(b.interests,Object.values(interestGroups).flat(),10),p_bio:required(b.bio,500,'a short bio'),p_habits:h,p_portfolio:portfolio})});return send(200,{id:result,token:t});
  }
  const id=await me(b.token);if(!id)throw fail(401,'Create your profile first.');
+ if(action==='photo'){
+  let photo=b.photo;
+  if(photo!==null){if(typeof photo!=='string'||photo.length>18000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photo))throw fail(400,'Choose a valid profile photo.');const raw=Buffer.from(photo.slice(23),'base64');if(raw.length<4||raw.length>13400||raw[0]!==255||raw[1]!==216||raw[2]!==255||raw.at(-2)!==255||raw.at(-1)!==217)throw fail(400,'Choose a valid JPEG photo.');}
+  await write(`byc_profiles?${scope}&id=eq.${id}`,'PATCH',{photo_data:photo,photo_version:photo===null?null:randomUUID()});return send(200,{ok:true});
+ }
  if(action==='delete'){await write(`byc_profiles?${scope}&id=eq.${id}`,'DELETE');return send(200,{ok:true})}
  if(['dm','dmread','bookmark'].includes(action)){
   const target=await peer(id,b.person);
