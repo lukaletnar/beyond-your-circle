@@ -1,5 +1,5 @@
-import {setupExtra} from './extra.mjs?v=25';
-import {programmes, skillGroups, interestGroups, habits} from './catalog.mjs?v=25';
+import {setupExtra} from './extra.mjs?v=26';
+import {programmes, skillGroups, interestGroups, habits} from './catalog.mjs?v=26';
 const $=s=>document.querySelector(s), main=$('#main'), dialog=$('#dialog');
 const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const load=k=>{const key='byc-'+k;try{const persistent=localStorage.getItem(key);if(persistent!==null)return persistent;const old=sessionStorage.getItem(key)||'';if(old){localStorage.setItem(key,old);sessionStorage.removeItem(key)}return old}catch{try{return sessionStorage.getItem(key)||''}catch{return ''}}};
