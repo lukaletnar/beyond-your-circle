@@ -30,8 +30,7 @@ if (!r.ok) {
   if (body.includes("DEMO_CAPACITY"))
     throw fail(409, "Classroom is full. Ask the presenter.");
 
-  throw fail(503, "Database unavailable. Please retry or tell the presenter.");
-} return r.status===204?null:await r.json();
+throw fail(503, `BYC-DIAG-V1: Supabase HTTP ${r.status}`);} return r.status===204?null:await r.json();
 }
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
